@@ -46,11 +46,13 @@ endif
 
 ifeq ($(GPU), 1) 
 #COMMON+= -DGPU -I/usr/local/cuda/include/
-COMMON+= -DGPU -I/opt/cuda-11.2/include/
+#COMMON+= -DGPU -I/opt/cuda-11.2/include/         # Calcula
+COMMON+= -DGPU -I/usr/local/cuda-11.1/include/    # Google Colab
+
 CFLAGS+= -DGPU
 #LDFLAGS+= -L/usr/local/cuda/lib64 -lcuda -lcudart -lcublas -lcurand
-LDFLAGS+= -L/opt/cuda-11.2/lib64 -lcuda -lcudart -lcublas -lcurand
-
+#LDFLAGS+= -L/opt/cuda-11.2/lib64 -lcuda -lcudart -lcublas -lcurand      # Calcula
+LDFLAGS+= -L/usr/local/cuda-11.1/lib64 -lcuda -lcudart -lcublas -lcurand # Google Colab
 endif
 
 ifeq ($(CUDNN), 1) 
