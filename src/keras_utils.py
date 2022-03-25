@@ -1,4 +1,3 @@
-
 import numpy as np
 import cv2
 import time
@@ -40,14 +39,14 @@ def load_model(path,custom_objects={},verbose=0):
 
 def reconstruct(Iorig,I,Y,out_size,threshold=.9):
 
-    net_stride     = 2**4
-    side         = ((208. + 40.)/2.)/net_stride # 7.75
+    net_stride = 2**4
+    side       = ((208. + 40.)/2.)/net_stride # 7.75
 
-    Probs = Y[...,0]
+    Probs   = Y[...,0]
     Affines = Y[...,2:]
-    rx,ry = Y.shape[:2]
-    ywh = Y.shape[1::-1]
-    iwh = np.array(I.shape[1::-1],dtype=float).reshape((2,1))
+    rx,ry   = Y.shape[:2]
+    ywh     = Y.shape[1::-1]
+    iwh     = np.array(I.shape[1::-1],dtype=float).reshape((2,1))
 
     xx,yy = np.where(Probs>threshold)
 
@@ -83,36 +82,110 @@ def reconstruct(Iorig,I,Y,out_size,threshold=.9):
 
     if len(final_labels):
         final_labels.sort(key=lambda x: x.prob(), reverse=True)
+
         for i,label in enumerate(final_labels):
 
-            t_ptsh     = getRectPts(0,0,out_size[0],out_size[1])
-            ptsh     = np.concatenate((label.pts*getWH(Iorig.shape).reshape((2,1)),np.ones((1,4))))
-            H         = find_T_matrix(ptsh,t_ptsh)
-            Ilp     = cv2.warpPerspective(Iorig,H,out_size,borderValue=.0)
+            t_ptsh = getRectPts(0,0,out_size[0],out_size[1])
+            ptsh   = np.concatenate((label.pts*getWH(Iorig.shape).reshape((2,1)),np.ones((1,4))))
+            
+            H      = find_T_matrix(ptsh,t_ptsh)
+            Ilp    = cv2.warpPerspective(Iorig,H,out_size,borderValue=.0)
 
             TLps.append(Ilp)
 
     return final_labels,TLps
     
-
 def detect_lp(model,I,max_dim,net_step,out_size,threshold):
 
     min_dim_img = min(I.shape[:2])
-    factor         = float(max_dim)/min_dim_img
+    factor      = float(max_dim)/min_dim_img
 
     w,h = (np.array(I.shape[1::-1],dtype=float)*factor).astype(int).tolist()
     w += (w%net_step!=0)*(net_step - w%net_step)
     h += (h%net_step!=0)*(net_step - h%net_step)
-    Iresized = cv2.resize(I,(w,h))
+    Iresized = cv2.resize(I,(w,h))  # Make the image dimensions multiple of net_step
 
     T = Iresized.copy()
     T = T.reshape((1,T.shape[0],T.shape[1],T.shape[2]))
 
-    start     = time.time()
-    Yr         = model.predict(T)
-    Yr         = np.squeeze(Yr)
+    start   = time.time()
+    Yr      = model.predict(T)
+    Yr      = np.squeeze(Yr)
     elapsed = time.time() - start
 
     L,TLps = reconstruct(I,Iresized,Yr,out_size,threshold)
 
     return L,TLps,elapsed
+
+def lp_oriented_box(I,Y,threshold=.9):
+
+    net_stride = 2**4
+    side       = ((208. + 40.)/2.)/net_stride # 7.75
+
+    Probs   = Y[...,0]
+    Affines = Y[...,2:]
+    rx,ry   = Y.shape[:2]
+    ywh     = Y.shape[1::-1]
+    iwh     = np.array(I.shape[1::-1],dtype=float).reshape((2,1))
+
+    xx,yy = np.where(Probs>threshold)
+
+    WH = getWH(I.shape)
+    MN = WH/net_stride
+
+    vxx = vyy = 0.5 #alpha
+
+    base = lambda vx,vy: np.matrix([[-vx,-vy,1.],[vx,-vy,1.],[vx,vy,1.],[-vx,vy,1.]]).T
+    labels = []
+
+    for i in range(len(xx)):
+        y,x    = xx[i],yy[i]
+        affine = Affines[y,x]
+        prob   = Probs[y,x]
+
+        mn = np.array([float(x) + .5,float(y) + .5])
+
+        A = np.reshape(affine,(2,3))
+        A[0,0] = max(A[0,0],0.)
+        A[1,1] = max(A[1,1],0.)
+
+        pts = np.array(A*base(vxx,vyy)) #*alpha
+        pts_MN_center_mn = pts*side
+        pts_MN = pts_MN_center_mn + mn.reshape((2,1))
+
+        pts_prop = pts_MN/MN.reshape((2,1))
+
+        labels.append(DLabel(0,pts_prop,prob))
+
+    final_labels = nms(labels,.1)
+    oboxes = []
+
+    if len(final_labels):
+        final_labels.sort(key=lambda x: x.prob(), reverse=True)
+
+        for i,label in enumerate(final_labels):
+            ptsh   = np.concatenate((label.pts*getWH(I.shape).reshape((2,1)),np.ones((1,4))))
+            oboxes.append(ptsh[0:2].astype(int))
+
+    return oboxes
+
+def get_lp_oboxes(model,I,net_step,threshold):
+
+    w,h = I.shape[1::-1]
+
+    nw = w + (w%net_step!=0)*(net_step - w%net_step)
+    nh = h + (h%net_step!=0)*(net_step - h%net_step)
+
+    Iresized = np.zeros((nh,nw, I.shape[2]))
+    Iresized[0:h,0:w] = I
+
+    T = I.copy()
+    T = T.reshape((1,T.shape[0],T.shape[1],T.shape[2]))
+
+    Yr      = model.predict(T)
+    Yr      = np.squeeze(Yr)
+
+    oboxes = lp_oriented_box(Iresized,Yr,threshold)
+
+    return oboxes
+
