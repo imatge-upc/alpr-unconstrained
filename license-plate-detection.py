@@ -27,13 +27,16 @@ if __name__ == '__main__':
 		wpod_net_path = sys.argv[2]
 		wpod_net = load_model(wpod_net_path)
 
-		imgs_paths = glob('%s/*car.png' % input_dir)
+		print (input_dir, wpod_net_path)
+                
+		#imgs_paths = glob('%s/*car.png' % input_dir)
+		imgs_paths = glob('%s/*.jpg' % input_dir)
 
-		print 'Searching for license plates using WPOD-NET'
+		print ('Searching for license plates using WPOD-NET')
 
 		for i,img_path in enumerate(imgs_paths):
 
-			print '\t Processing %s' % img_path
+			print ('\t Processing %s' % img_path)
 
 			bname = splitext(basename(img_path))[0]
 			Ivehicle = cv2.imread(img_path)
@@ -41,19 +44,19 @@ if __name__ == '__main__':
 			ratio = float(max(Ivehicle.shape[:2]))/min(Ivehicle.shape[:2])
 			side  = int(ratio*288.)
 			bound_dim = min(side + (side%(2**4)),608)
-			print "\t\tBound dim: %d, ratio: %f" % (bound_dim,ratio)
+			print ("\t\tBound dim: %d, ratio: %f" % (bound_dim,ratio))
 
 			Llp,LlpImgs,_ = detect_lp(wpod_net,im2single(Ivehicle),bound_dim,2**4,(240,80),lp_threshold)
 
-			if len(LlpImgs):
-				Ilp = LlpImgs[0]
+			for ii in range(len(LlpImgs)):
+				Ilp = LlpImgs[ii]
 				Ilp = cv2.cvtColor(Ilp, cv2.COLOR_BGR2GRAY)
 				Ilp = cv2.cvtColor(Ilp, cv2.COLOR_GRAY2BGR)
 
-				s = Shape(Llp[0].pts)
+				s = Shape(Llp[ii].pts)
 
-				cv2.imwrite('%s/%s_lp.png' % (output_dir,bname),Ilp*255.)
-				writeShapes('%s/%s_lp.txt' % (output_dir,bname),[s])
+				cv2.imwrite('%s/%s_%d_lp.png' % (output_dir,bname,ii),Ilp*255.)
+				writeShapes('%s/%s_%d_lp.txt' % (output_dir,bname,ii),[s])
 
 	except:
 		traceback.print_exc()
